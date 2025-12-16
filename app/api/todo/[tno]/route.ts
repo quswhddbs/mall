@@ -1,27 +1,31 @@
 import { NextResponse } from "next/server";
 import { get, modify, remove } from "@/lib/services/todoService";
 import type { TodoDTO } from "@/lib/dto/todoDTO";
-
+import { errorResponse } from "@/lib/api/errorResponse";
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ tno: string }> }
 ) {
   try {
-    const { tno } = await params; // ✅ 핵심
+    const { tno } = await params;
     const tnoNum = Number(tno);
 
+    // PathVariable 검증 (Spring @PathVariable 대응)
     if (isNaN(tnoNum)) {
-      return NextResponse.json({ message: "잘못된 tno 값" }, { status: 400 });
+      return NextResponse.json(
+        { msg: "잘못된 tno 값" },
+        { status: 400 }
+      );
     }
 
+    // Service 호출
     const todoDTO = await get(tnoNum);
+
     return NextResponse.json(todoDTO);
-  } catch (e: any) {
-    return NextResponse.json(
-      { message: "조회 실패", error: e.message },
-      { status: 500 }
-    );
+  } catch (e) {
+    // 전역 예외 처리 (@RestControllerAdvice 대응)
+    return errorResponse(e);
   }
 }
 
