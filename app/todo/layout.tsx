@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 export default function TodoLayout({
@@ -10,35 +9,34 @@ export default function TodoLayout({
 }) {
   const router = useRouter();
 
-  const handleClickList = () => {
-    router.push("/todo/list");
-  };
-
-  const handleClickAdd = () => {
-    router.push("/todo/add");
-  };
+  const handleClickList = () => router.push("/todo/list");
+  const handleClickAdd = () => router.push("/todo/add");
 
   return (
-    <div className="w-full m-2 p-2">
-      {/* LIST / ADD 영역 */}
-      <div className="w-full flex m-2 p-2">
-        <div
-          className="text-xl m-1 p-2 w-20 font-extrabold text-center underline cursor-pointer"
-          onClick={handleClickList}
-        >
-          LIST
+    <div className="w-full flex justify-center px-2 py-4">
+      <div className="w-full max-w-5xl">
+        {/* LIST / ADD */}
+        <div className="flex gap-3 px-2 py-2">
+          <button
+            className="text-xl px-4 py-2 font-extrabold underline"
+            onClick={handleClickList}
+            type="button"
+          >
+            LIST
+          </button>
+
+          <button
+            className="text-xl px-4 py-2 font-extrabold underline"
+            onClick={handleClickAdd}
+            type="button"
+          >
+            ADD
+          </button>
         </div>
 
-        <div
-          className="text-xl m-1 p-2 w-20 font-extrabold text-center underline cursor-pointer"
-          onClick={handleClickAdd}
-        >
-          ADD
-        </div>
+        {/* 내용 */}
+        <div className="w-full">{children}</div>
       </div>
-
-      {/* Outlet 위치 */}
-      <div className="flex flex-wrap w-full">{children}</div>
     </div>
   );
 }
