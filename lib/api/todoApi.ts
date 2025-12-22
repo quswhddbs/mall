@@ -29,3 +29,15 @@ export async function fetchTodoList(page = 1, size = 10) {
     items, // 항상 items로 통일해서 반환
   };
 }
+
+
+export async function fetchTodoOne(tno: number | string) {
+  const res = await fetch(`/api/todo/${tno}`, { method: "GET" });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.message ?? "read api failed");
+  }
+
+  return (await res.json()) as TodoDTO;
+}
