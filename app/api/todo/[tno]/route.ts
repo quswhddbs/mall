@@ -3,28 +3,28 @@ import { get, modify, remove } from "@/lib/services/todoService";
 import type { TodoDTO } from "@/lib/dto/todoDTO";
 import { errorResponse } from "@/lib/api/errorResponse";
 
+async function parseTno(params: Promise<{ tno: string }>) {
+  const { tno } = await params;
+  const tnoNum = Number(tno);
+
+  if (!Number.isInteger(tnoNum) || tnoNum <= 0) {
+    return { ok: false as const, res: NextResponse.json({ message: "잘못된 tno 값" }, { status: 400 }) };
+  }
+
+  return { ok: true as const, tnoNum };
+}
+
 export async function GET(
-  request: Request,
+  _req: Request,
   { params }: { params: Promise<{ tno: string }> }
 ) {
   try {
-    const { tno } = await params;
-    const tnoNum = Number(tno);
+    const parsed = await parseTno(params);
+    if (!parsed.ok) return parsed.res;
 
-    // PathVariable 검증 (Spring @PathVariable 대응)
-    if (isNaN(tnoNum)) {
-      return NextResponse.json(
-        { msg: "잘못된 tno 값" },
-        { status: 400 }
-      );
-    }
-
-    // Service 호출
-    const todoDTO = await get(tnoNum);
-
-    return NextResponse.json(todoDTO);
+    const todoDTO = await get(parsed.tnoNum);
+    return NextResponse.json(todoDTO, { status: 200 });
   } catch (e) {
-    // 전역 예외 처리 (@RestControllerAdvice 대응)
     return errorResponse(e);
   }
 }
@@ -34,36 +34,55 @@ export async function PUT(
   { params }: { params: Promise<{ tno: string }> }
 ) {
   try {
-    const { tno } = await params;
-    const tnoNum = Number(tno);
-    const body = (await req.json()) as TodoDTO;
+    const parsed = await parseTno(params);
+    if (!parsed.ok) return parsed.res;
 
-    await modify({ ...body, tno: tnoNum });
+    let body: Partial<TodoDTO>;
+    try {
+      body = (await req.json()) as Partial<TodoDTO>;
+    } catch {
+      return NextResponse.json({ message: "요청 바디가 올바르지 않습니다." }, { status: 400 });
+    }
 
-    return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, message: "modify 실패", error: e.message },
-      { status: 500 }
-    );
+    // 최소 검증 (원하면 더 강화 가능)
+    if (typeof body.title !== "string" || body.title.trim().length === 0) {
+      return NextResponse.json({ message: "title은 필수입니다." }, { status: 400 });
+    }
+    if (typeof body.writer !== "string" || body.writer.trim().length === 0) {
+      return NextResponse.json({ message: "writer는 필수입니다." }, { status: 400 });
+    }
+    if (typeof body.dueDate !== "string") {
+      return NextResponse.json({ message: "dueDate 형식이 올바르지 않습니다." }, { status: 400 });
+    }
+    if (typeof body.complete !== "boolean") {
+      return NextResponse.json({ message: "complete 형식이 올바르지 않습니다." }, { status: 400 });
+    }
+
+    await modify({
+      tno: parsed.tnoNum,
+      title: body.title,
+      writer: body.writer,
+      dueDate: body.dueDate,
+      complete: body.complete,
+    });
+
+    return NextResponse.json({ ok: true }, { status: 200 });
+  } catch (e) {
+    return errorResponse(e);
   }
 }
 
 export async function DELETE(
-  req: Request,
+  _req: Request,
   { params }: { params: Promise<{ tno: string }> }
 ) {
   try {
-    const { tno } = await params;
-    const tnoNum = Number(tno);
+    const parsed = await parseTno(params);
+    if (!parsed.ok) return parsed.res;
 
-    await remove(tnoNum);
-
-    return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, message: "remove 실패", error: e.message },
-      { status: 500 }
-    );
+    await remove(parsed.tnoNum);
+    return NextResponse.json({ ok: true }, { status: 200 });
+  } catch (e) {
+    return errorResponse(e);
   }
 }

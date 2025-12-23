@@ -2,7 +2,7 @@
 import type { TodoDTO } from "@/lib/dto/todoDTO";
 import { supabase } from "@/lib/supabaseClient";
 
-// DB row -> DTO 변환(중복 제거)
+// ====== 공통 변환 ======
 function toTodoDTO(row: any): TodoDTO {
   return {
     tno: row.tno,
@@ -13,20 +13,26 @@ function toTodoDTO(row: any): TodoDTO {
   };
 }
 
-// DTO -> DB payload 변환(중복 제거)
 function toPayload(dto: TodoDTO) {
   return {
     title: dto.title,
     writer: dto.writer,
     complete: dto.complete ?? false,
-    due_date: dto.dueDate, // DB 컬럼명에 맞춤
+    due_date: dto.dueDate,
   };
 }
 
-// TodoService.register(TodoDTO) 대응
-export async function register(todoDTO: TodoDTO): Promise<number> {
-  console.log("......... register");
+// ====== 공통 에러(404) ======
+function notFound(tno: number) {
+  const err = new Error(`Todo not found: tno=${tno}`);
+  // errorResponse에서 status로 활용 가능하게 힌트 부여
+  (err as any).status = 404;
+  (err as any).code = "TODO_NOT_FOUND";
+  return err;
+}
 
+// ====== register ======
+export async function register(todoDTO: TodoDTO): Promise<number> {
   const { data, error } = await supabase
     .from("tbl_todo")
     .insert(toPayload(todoDTO))
@@ -37,42 +43,59 @@ export async function register(todoDTO: TodoDTO): Promise<number> {
   return data.tno as number;
 }
 
-// TodoService.get(Long tno) 대응
+// ====== get ======
 export async function get(tno: number): Promise<TodoDTO> {
-  console.log("......... get", tno);
-
   const { data, error } = await supabase
     .from("tbl_todo")
     .select("*")
     .eq("tno", tno)
-    .single();
+    .maybeSingle(); // ✅ 없는 경우 data=null, error=null 가능
 
   if (error) throw error;
+  if (!data) throw notFound(tno);
+
   return toTodoDTO(data);
 }
 
-// TodoService.modify(TodoDTO) 대응
+// ====== modify ======
 export async function modify(todoDTO: TodoDTO): Promise<void> {
-  if (todoDTO.tno == null) {
+  const tno = Number(todoDTO.tno);
+
+  if (!Number.isInteger(tno) || tno <= 0) {
     throw new Error("tno is required for modify()");
   }
 
-  const { error } = await supabase
+  // ✅ 업데이트 결과를 받아 0건이면 404 처리
+  const { data, error } = await supabase
     .from("tbl_todo")
     .update(toPayload(todoDTO))
-    .eq("tno", todoDTO.tno);
+    .eq("tno", tno)
+    .select("tno")
+    .maybeSingle();
 
   if (error) throw error;
+  if (!data) throw notFound(tno);
 }
 
-// TodoService.remove(Long tno) 대응
+// ====== remove ======
 export async function remove(tno: number): Promise<void> {
-  const { error } = await supabase.from("tbl_todo").delete().eq("tno", tno);
+  if (!Number.isInteger(tno) || tno <= 0) {
+    throw new Error("tno is required for remove()");
+  }
+
+  // ✅ 삭제 결과를 받아 0건이면 404 처리
+  const { data, error } = await supabase
+    .from("tbl_todo")
+    .delete()
+    .eq("tno", tno)
+    .select("tno")
+    .maybeSingle();
+
   if (error) throw error;
+  if (!data) throw notFound(tno);
 }
 
-// TodoService.list(PageRequestDTO) 대응(Next 방식)
-// ✅ 기존 dtoList 유지(안 깨짐) + ✅ items 추가(점진 교체)
+// ====== list ======
 export async function list(page = 1, size = 10) {
   const safePage = Number.isFinite(page) && page > 0 ? page : 1;
   const safeSize = Number.isFinite(size) && size > 0 ? size : 10;
@@ -92,12 +115,8 @@ export async function list(page = 1, size = 10) {
   const totalCount = count ?? 0;
 
   return {
-    // ✅ 기존 유지
     dtoList: items,
-
-    // ✅ 새 방식(앞으로 프론트는 이걸로 옮기면 됨)
     items,
-
     page: safePage,
     size: safeSize,
     totalCount,
