@@ -1,12 +1,16 @@
+import { Suspense } from "react";
 import ReadClient from "./ReadClient";
 
-export default async function Page({
-  params,
-}: {
-  params: Promise<{ tno: string }>;
-}) {
-  // ✅ Promise인 params를 await 해서 실제 값 꺼내기
-  const { tno } = await params;
+type Ctx = {
+  params: { tno: string } | Promise<{ tno: string }>;
+};
 
-  return <ReadClient tno={tno} />;
+export default async function Page(ctx: Ctx) {
+  const { tno } = await ctx.params;
+
+  return (
+    <Suspense fallback={<div className="p-4 font-bold">Loading...</div>}>
+      <ReadClient tno={tno} />
+    </Suspense>
+  );
 }
