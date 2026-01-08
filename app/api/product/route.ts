@@ -3,41 +3,67 @@ import { NextRequest, NextResponse } from "next/server";
 import { errorResponse } from "@/lib/api/errorResponse";
 import * as productService from "@/lib/services/productService";
 import { saveFiles } from "@/lib/utils/customFileUtil";
-import type { ProductDTO } from "@/lib/dto/productDTO";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
 
-    const pname = String(formData.get("pname") ?? "");
-    const price = Number(formData.get("price") ?? 0);
-    const pdesc = (formData.get("pdesc") as string | null) ?? null;
+    const pname = String(formData.get("pname") ?? "").trim();
+    const priceRaw = String(formData.get("price") ?? "0").trim();
+    const price = Number(priceRaw);
 
-    // ✅ files 키로 여러 개 올릴 수 있음
-    const files = formData.getAll("files") as File[];
+    const pdescRaw = formData.get("pdesc");
+    const pdesc = pdescRaw == null ? null : String(pdescRaw);
 
-    // 1) 먼저 상품만 등록해서 pno 확보 (폴더 구분하려고)
+    if (!pname) {
+      return NextResponse.json({ message: "pname is required" }, { status: 400 });
+    }
+
+    // ✅ 가격 검증(실무 기본)
+    if (!Number.isFinite(price) || price < 0) {
+      return NextResponse.json({ message: "price must be a number >= 0" }, { status: 400 });
+    }
+
+    // ✅ "files" 키로 여러 개 업로드
+    const files = formData.getAll("files").filter(Boolean) as File[];
+
+    // ✅ 파일 제한(너무 과하면 서버 터짐 방지)
+    if (files.length > 5) {
+      return NextResponse.json({ message: "max 5 files allowed" }, { status: 400 });
+    }
+
+    // ✅ 파일 타입 검증(이미지만 받는 정책이면 이렇게)
+    for (const f of files) {
+      if (f.type && !f.type.startsWith("image/")) {
+        return NextResponse.json({ message: "only image files are allowed" }, { status: 400 });
+      }
+    }
+
+    // 1) 상품 먼저 등록해서 pno 확보
     const pno = await productService.register({
       pname,
       price,
       pdesc,
-      uploadFileNames: [], // 일단 비워둠
-    } as ProductDTO);
+      uploadFileNames: [],
+    });
 
-    // 2) 파일 업로드 (Supabase Storage)
-    const uploadResults = await saveFiles(files, pno);
+    // 2) Storage 업로드
+    const uploadResults = files.length ? await saveFiles(files, pno) : null;
+    const uploadFileNames = uploadResults?.map((r) => r.originalPath) ?? [];
 
-    const uploadFileNames =
-      uploadResults?.map((r) => r.originalPath) ?? [];
-
-    // 3) 상품에 파일키 반영(교재의 setUploadFileNames + modify 흐름 치환)
-    await productService.modify({
-      pno,
-      pname,
-      price,
-      pdesc,
-      uploadFileNames,
-    } as ProductDTO);
+    // 3) 이미지 목록 반영
+    if (uploadFileNames.length > 0) {
+      await productService.modify({
+        pno,
+        pname,
+        price,
+        pdesc,
+        uploadFileNames,
+      });
+    }
 
     return NextResponse.json({ result: pno });
   } catch (e: any) {

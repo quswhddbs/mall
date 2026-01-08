@@ -1,5 +1,4 @@
-"use client";
-
+// app/components/menus/BasicMenu.tsx
 import Link from "next/link";
 
 export default function BasicMenu() {
@@ -14,7 +13,10 @@ export default function BasicMenu() {
             <Link href="/about">About</Link>
           </li>
           <li className="pr-6 text-2xl">
-            <Link href="/todo">todo</Link>
+            <Link href="/todo/list">Todo</Link>
+          </li>
+          <li className="pr-6 text-2xl">
+            <Link href="/product/list">Product</Link>
           </li>
         </ul>
       </div>

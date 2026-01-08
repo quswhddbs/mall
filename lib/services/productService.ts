@@ -1,12 +1,14 @@
 // lib/services/productService.ts
 import { supabase } from "@/lib/supabaseClient";
 import type { ProductDTO } from "@/lib/dto/productDTO";
-import type { PageRequestDTO } from "@/lib/dto/pageRequestDTO";
 import { buildPageResponse } from "@/lib/dto/pageResponseDTO";
 
 const PRODUCT_TABLE = "tbl_product";
 const PRODUCT_IMAGE_TABLE = "tbl_product_image";
 const BUCKET = process.env.NEXT_PUBLIC_PRODUCT_BUCKET ?? "product";
+
+// ✅ 등록(Add) 전용 입력 타입 (pno 금지)
+export type ProductAddInput = Omit<ProductDTO, "pno">;
 
 // ====== 공통 변환 ======
 function toProductDTO(row: any, uploadFileNames: string[] = []): ProductDTO {
@@ -20,7 +22,12 @@ function toProductDTO(row: any, uploadFileNames: string[] = []): ProductDTO {
   };
 }
 
-function toProductPayload(dto: ProductDTO) {
+function toProductPayload(dto: {
+  pname: string;
+  price: number;
+  pdesc?: string | null;
+  delFlag?: boolean;
+}) {
   return {
     pname: dto.pname,
     price: dto.price,
@@ -43,7 +50,7 @@ function notFound(pno: number) {
 }
 
 // ====== register ======
-export async function register(productDTO: ProductDTO): Promise<number> {
+export async function register(productDTO: ProductAddInput): Promise<number> {
   const { data, error } = await supabase
     .from(PRODUCT_TABLE)
     .insert(toProductPayload(productDTO))
@@ -99,7 +106,6 @@ export async function get(pno: number): Promise<ProductDTO> {
 }
 
 // ====== modify ======
-// 교재 흐름: product 수정 + 이미지 목록 전체 교체(clearList 후 add)
 export async function modify(productDTO: ProductDTO): Promise<void> {
   const pno = Number(productDTO.pno);
 
@@ -107,7 +113,6 @@ export async function modify(productDTO: ProductDTO): Promise<void> {
     throw new Error("pno is required for modify()");
   }
 
-  // ✅ 업데이트 결과 0건이면 404
   const { data: updated, error: upErr } = await supabase
     .from(PRODUCT_TABLE)
     .update({
@@ -122,7 +127,6 @@ export async function modify(productDTO: ProductDTO): Promise<void> {
   if (upErr) throw upErr;
   if (!updated) throw notFound(pno);
 
-  // 이미지 clear
   const { error: delErr } = await supabase
     .from(PRODUCT_IMAGE_TABLE)
     .delete()
@@ -130,7 +134,6 @@ export async function modify(productDTO: ProductDTO): Promise<void> {
 
   if (delErr) throw delErr;
 
-  // 이미지 재삽입
   const keys = productDTO.uploadFileNames ?? [];
   if (keys.length > 0) {
     const rows = keys.map((path, idx) => ({
@@ -151,7 +154,6 @@ export async function modify(productDTO: ProductDTO): Promise<void> {
 }
 
 // ====== remove ======
-// 교재: soft delete (delFlag=true)
 export async function remove(pno: number): Promise<void> {
   if (!Number.isInteger(pno) || pno <= 0) {
     throw new Error("pno is required for remove()");
@@ -188,7 +190,7 @@ export async function list(page = 1, size = 10) {
   const pnoList = (products ?? []).map((p) => p.pno as number);
 
   // ord=0 한 장만(리스트 썸네일용)
-  let thumbMap = new Map<number, string>();
+  const thumbMap = new Map<number, string>();
   if (pnoList.length > 0) {
     const { data: thumbs, error: tErr } = await supabase
       .from(PRODUCT_IMAGE_TABLE)
@@ -208,10 +210,12 @@ export async function list(page = 1, size = 10) {
     return toProductDTO(p, thumb ? [thumb] : []);
   });
 
-  // ✅ 교재형 PageResponseDTO 형태도 같이 유지 가능
-  const pageResponse = buildPageResponse(dtoList, { page: safePage, size: safeSize }, count ?? 0);
+  const pageResponse = buildPageResponse(
+    dtoList,
+    { page: safePage, size: safeSize },
+    count ?? 0
+  );
 
-  // todoService.ts처럼 items도 같이 주는 형태
   return {
     ...pageResponse,
     items: dtoList,

@@ -1,20 +1,21 @@
 // lib/dto/pageResponseDTO.ts
 import type { PageRequestDTO } from "@/lib/dto/pageRequestDTO";
 
-export type PageResponseDTO<E> = {
-  dtoList: E[];
-  pageNumList: number[];
-  pageRequestDTO: Required<PageRequestDTO>;
 
+export type PageResponseDTO<T> = {
+  dtoList: T[];
+  pageNumList: number[];
+  pageRequestDTO?: PageRequestDTO; // ✅ optional (null 금지)
   prev: boolean;
   next: boolean;
-
-  totalCount: number;
+  totalCount: number; // ✅ spelling도 totalCount로 통일
   prevPage: number;
   nextPage: number;
   totalPage: number;
   current: number;
 };
+
+
 
 // 교재 PageResponseDTO.withAll(...) 계산 로직 치환
 export function buildPageResponse<E>(

@@ -10,7 +10,6 @@ type Props = {
 export default function PageComponent({ page, size, totalCount, movePage }: Props) {
   const totalPage = Math.max(1, Math.ceil(totalCount / size));
 
-  // 버튼 10개 단위로 묶기 (원하면 숫자만 바꿔도 됨)
   const blockSize = 10;
   const currentBlock = Math.floor((page - 1) / blockSize);
   const startPage = currentBlock * blockSize + 1;

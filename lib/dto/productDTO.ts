@@ -1,19 +1,17 @@
 // lib/dto/productDTO.ts
 export type ProductDTO = {
+  // ✅ 등록(Add) 단계에서는 pno가 아직 없으므로 optional
+  // ✅ 조회(Read) / 수정(Modify) 이후에는 값이 들어오게 됨
   pno?: number;
 
   pname: string;
-  price: number;
+
+  // ✅ route.ts에서 null을 넣을 수 있으므로 null 허용
   pdesc?: string | null;
+
+  price: number;
 
   delFlag?: boolean;
 
-  // ✅ 교재: files (MultipartFile 목록)
-  // Next: Client에서만 사용 (FormData로 보내기 때문에 타입만 유지)
-  files?: File[];
-
-  // ✅ 교재: uploadFileNames (저장된 파일명 목록)
-  // Next/Supabase: 지금은 "Storage path(키)"를 넣어도 되고,
-  // 교재 흐름 유지하려면 그냥 string[]로 유지하면 됨.
   uploadFileNames?: string[];
 };
