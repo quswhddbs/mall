@@ -2,8 +2,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { errorResponse } from "@/lib/api/errorResponse";
 import * as productService from "@/lib/services/productService";
-import { saveFiles, deleteFiles, expandWithThumb, normalizePath } from "@/lib/utils/customFileUtil";
+import {
+  saveFiles,
+  deleteFiles,
+  expandWithThumb,
+  normalizePath,
+} from "@/lib/utils/customFileUtil";
 import type { ProductDTO } from "@/lib/dto/productDTO";
+import { requireAuth } from "@/lib/auth/requireAuth";
 
 export const runtime = "nodejs";
 
@@ -11,10 +17,18 @@ type Ctx = {
   params: { pno: string } | Promise<{ pno: string }>;
 };
 
-export async function GET(_req: NextRequest, ctx: Ctx) {
+export async function GET(req: NextRequest, ctx: Ctx) {
   try {
+    // ✅ 조회: USER/ADMIN 허용
+    await requireAuth(req, { roles: ["USER", "ADMIN"] });
+
     const { pno } = await ctx.params;
     const num = Number(pno);
+
+    if (!Number.isInteger(num) || num <= 0) {
+      return NextResponse.json({ message: "invalid pno" }, { status: 400 });
+    }
+
     const data = await productService.get(num);
     return NextResponse.json(data);
   } catch (e: any) {
@@ -24,6 +38,9 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
 
 export async function PUT(req: NextRequest, ctx: Ctx) {
   try {
+    // ✅ 수정: MANAGER/ADMIN 허용 (원하면 USER도 추가 가능)
+    await requireAuth(req, { roles: ["MANAGER", "ADMIN"] });
+
     const { pno } = await ctx.params;
     const num = Number(pno);
     if (!Number.isInteger(num) || num <= 0) {
@@ -34,7 +51,9 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     let prevOriginals: string[] = [];
     try {
       const prev = await productService.get(num);
-      prevOriginals = (prev.uploadFileNames ?? []).filter(Boolean).map(normalizePath);
+      prevOriginals = (prev.uploadFileNames ?? [])
+        .filter(Boolean)
+        .map(normalizePath);
     } catch {
       prevOriginals = [];
     }
@@ -55,7 +74,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     const files = (formData.getAll("files") as unknown as File[]).filter(Boolean);
 
     const uploadResults = await saveFiles(files, num);
-    const newUploadFileNames = uploadResults?.map((r) => normalizePath(r.originalPath)) ?? [];
+    const newUploadFileNames =
+      uploadResults?.map((r) => normalizePath(r.originalPath)) ?? [];
 
     const finalOriginals = [...keepUploadFileNames, ...newUploadFileNames];
 
@@ -69,8 +89,6 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     } as ProductDTO);
 
     // ✅ 2) Storage 정리: (수정 전 originals) - (수정 후 originals) 삭제
-    // - keep에서 제거된 것들만 삭제 대상
-    // - 새로 업로드된 건 삭제하면 안 됨
     const prevSet = new Set(prevOriginals);
     const nextSet = new Set(finalOriginals);
 
@@ -82,7 +100,6 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         await deleteFiles(targets);
       } catch (e: any) {
         console.warn("[PUT product] storage remove failed:", e?.message ?? e);
-        // ✅ 실무에서도 보통: DB는 성공, 스토리지 삭제 실패는 로그만 남기고 진행
       }
     }
 
@@ -92,8 +109,11 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   }
 }
 
-export async function DELETE(_req: NextRequest, ctx: Ctx) {
+export async function DELETE(req: NextRequest, ctx: Ctx) {
   try {
+    // ✅ 삭제: ADMIN만 허용
+    await requireAuth(req, { roles: ["ADMIN"] });
+
     const { pno } = await ctx.params;
     const num = Number(pno);
 
