@@ -1,47 +1,54 @@
-// lib/store/authSlice.ts
 import { createAsyncThunk, createSlice, PayloadAction } from "@reduxjs/toolkit";
 import { supabase } from "@/lib/supabaseClient";
 
 export type AuthState = {
   email: string | null;
+  roles: string[];
   loading: boolean;
 };
 
 const initialState: AuthState = {
   email: null,
+  roles: [],
   loading: false,
 };
 
-// ✅ 앱 시작 시: Supabase 세션 -> Redux 동기화 (실전형 핵심)
-export const initAuthAsync = createAsyncThunk("auth/initAuth", async () => {
-  const { data, error } = await supabase.auth.getSession();
+// ✅ 앱 시작 시 세션 + role 동기화
+export const initAuthAsync = createAsyncThunk("auth/init", async () => {
+  const { data } = await supabase.auth.getSession();
+  const session = data.session;
 
-  if (error) {
-    return { email: null as string | null };
+  if (!session?.access_token) {
+    return { email: null, roles: [] };
   }
 
-  const email = data.session?.user?.email ?? null;
-  return { email };
+  const res = await fetch("/api/member/me", {
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+    },
+  });
+
+  if (!res.ok) {
+    return { email: null, roles: [] };
+  }
+
+  const json = await res.json();
+
+  return {
+    email: json.email ?? null,
+    roles: json.roles ?? [],
+  };
 });
 
-// ✅ 로그아웃도 Redux + Supabase 같이 정리 (9장까지 깔끔해짐)
 export const signOutAsync = createAsyncThunk("auth/signOut", async () => {
   await supabase.auth.signOut();
-  return { email: null as string | null };
+  return { email: null, roles: [] };
 });
 
 const authSlice = createSlice({
   name: "auth",
   initialState,
-  reducers: {
-    // 테스트나 임시 세팅용 (원하면 나중에 제거 가능)
-    setEmail(state, action: PayloadAction<string | null>) {
-      state.email = action.payload;
-    },
-    clearAuth(state) {
-      state.email = null;
-    },
-  },
+  reducers: {},
   extraReducers: (builder) => {
     builder
       .addCase(initAuthAsync.pending, (state) => {
@@ -50,16 +57,18 @@ const authSlice = createSlice({
       .addCase(initAuthAsync.fulfilled, (state, action) => {
         state.loading = false;
         state.email = action.payload.email;
+        state.roles = action.payload.roles;
       })
       .addCase(initAuthAsync.rejected, (state) => {
         state.loading = false;
         state.email = null;
+        state.roles = [];
       })
       .addCase(signOutAsync.fulfilled, (state) => {
         state.email = null;
+        state.roles = [];
       });
   },
 });
 
-export const { setEmail, clearAuth } = authSlice.actions;
 export default authSlice.reducer;

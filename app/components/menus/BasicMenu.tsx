@@ -7,8 +7,10 @@ import { signOutAsync } from "@/lib/store/authSlice";
 
 export default function BasicMenu() {
   const dispatch = useDispatch();
-  const email = useSelector((state: RootState) => state.auth.email);
+
+  const { email, roles } = useSelector((state: RootState) => state.auth);
   const isLogin = !!email;
+  const isAdmin = roles.includes("ADMIN");
 
   return (
     <nav id="navbar" className="flex bg-blue-300">
@@ -31,12 +33,20 @@ export default function BasicMenu() {
               </li>
             </>
           )}
+
+          {isAdmin && (
+            <li className="pr-6 text-2xl text-yellow-300">
+              <Link href="/admin/users">Admin</Link>
+            </li>
+          )}
         </ul>
       </div>
 
       <div className="w-1/5 flex justify-end bg-orange-300 p-4 font-medium">
         {!isLogin ? (
-          <div className="text-white text-sm m-1 rounded">Login</div>
+          <Link className="text-white text-sm m-1 rounded" href="/member/login">
+            Login
+          </Link>
         ) : (
           <button
             className="text-white text-sm m-1 rounded"

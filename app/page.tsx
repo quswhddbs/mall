@@ -5,8 +5,8 @@ import { supabase } from "@/lib/supabaseClient";
 export default function Home() {
   const login = async () => {
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: "user1@aaa.com",
-      password: "1111",
+      email: "quswhddbs85@gmail.com",
+      password: "12qwaszx!",
     });
 
     console.log("login data:", data);

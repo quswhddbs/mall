@@ -42,11 +42,19 @@ export async function requireAuth(
 ): Promise<AuthUser> {
   const authHeader = req.headers.get("authorization");
 
+ // ✅ 여기 추가
+ // console.log("AUTH HEADER:", authHeader);
+
+  
   if (!authHeader || !authHeader.toLowerCase().startsWith("bearer ")) {
     throw new Error("NO_AUTH_HEADER");
   }
 
   const accessToken = authHeader.slice(7).trim();
+
+  // ✅ 여기 추가
+  // console.log("ACCESS TOKEN:", accessToken?.slice(0, 30));
+
   if (!accessToken) {
     throw new Error("EMPTY_TOKEN");
   }
@@ -104,3 +112,5 @@ export async function requireAuth(
     roles,
   };
 }
+
+
