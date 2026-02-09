@@ -1,5 +1,6 @@
 import "./globals.css";
 import BasicMenu from "./components/menus/BasicMenu";
+import CartSidebar from "./components/menus/CartSidebar";
 import Providers from "./providers";
 
 export default function RootLayout({
@@ -22,7 +23,7 @@ export default function RootLayout({
 
             {/* Sidebar */}
             <aside className="bg-green-300 w-full md:w-72 px-5 py-4 md:py-10">
-              <h1 className="text-2xl md:text-4xl">Sidebar</h1>
+              <CartSidebar />
             </aside>
           </div>
         </Providers>

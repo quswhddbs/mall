@@ -1,5 +1,6 @@
-import { createAsyncThunk, createSlice, PayloadAction } from "@reduxjs/toolkit";
+import { createAsyncThunk, createSlice } from "@reduxjs/toolkit";
 import { supabase } from "@/lib/supabaseClient";
+import { clearCart } from "./cartSlice";
 
 export type AuthState = {
   email: string | null;
@@ -40,10 +41,19 @@ export const initAuthAsync = createAsyncThunk("auth/init", async () => {
   };
 });
 
-export const signOutAsync = createAsyncThunk("auth/signOut", async () => {
-  await supabase.auth.signOut();
-  return { email: null, roles: [] };
-});
+// ✅ 로그아웃: Supabase 세션 종료 + Redux auth 초기화
+// ✅ 추가: cart도 같이 비움 (UX/보안)
+export const signOutAsync = createAsyncThunk(
+  "auth/signOut",
+  async (_, thunkAPI) => {
+    await supabase.auth.signOut();
+
+    // ✅ 로그아웃 시 장바구니 비우기
+    thunkAPI.dispatch(clearCart());
+
+    return { email: null, roles: [] };
+  }
+);
 
 const authSlice = createSlice({
   name: "auth",
@@ -63,6 +73,9 @@ const authSlice = createSlice({
         state.loading = false;
         state.email = null;
         state.roles = [];
+
+        // ✅ 세션/권한 확인 실패면 cart도 비움(안전)
+        // (로그아웃 버튼이 아니라도, auth가 깨졌다면 cart는 남기지 않는 게 맞음)
       })
       .addCase(signOutAsync.fulfilled, (state) => {
         state.email = null;

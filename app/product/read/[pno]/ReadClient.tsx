@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { getOne } from "@/lib/api/productApi";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ProductDTO } from "@/lib/dto/productDTO";
+import useCart from "@/hooks/useCart";
+import { useAppSelector } from "@/lib/store/hooks";
 
 const initState: ProductDTO = {
   pno: 0,
@@ -19,6 +21,14 @@ function normalizePathForView(path?: string) {
   return path.startsWith("product/") ? path.replace(/^product\//, "") : path;
 }
 
+type AuthLike = {
+  email?: string;
+  nickname?: string;
+  user?: { email?: string; nickname?: string };
+  isLogin?: boolean;
+  isAuthenticated?: boolean;
+};
+
 export default function ReadClient({ pno }: { pno: number }) {
   const router = useRouter();
   const sp = useSearchParams();
@@ -28,9 +38,15 @@ export default function ReadClient({ pno }: { pno: number }) {
 
   const [product, setProduct] = useState<ProductDTO>(initState);
 
+  // ✅ 장바구니
+  const { cartItems, changeCart } = useCart();
+
+  // ✅ 로그인 정보(UX 보조용) - 실제 보안은 서버에서 requireAuth로 처리
+  const auth = useAppSelector((state) => state.auth) as unknown as AuthLike;
+  const email = auth?.email ?? auth?.user?.email;
+
   useEffect(() => {
     getOne(pno).then((data: ProductDTO) => {
-      // ✅ pno undefined 방어 (타입/응답 꼬임 대비)
       setProduct({
         ...data,
         pno: Number((data as any).pno ?? 0),
@@ -45,6 +61,30 @@ export default function ReadClient({ pno }: { pno: number }) {
 
   const moveToModify = () => {
     router.push(`/product/modify/${pno}?page=${page}&size=${size}`);
+  };
+
+  // ✅ 교재 11.4: 상품 조회에서 장바구니 추가
+  const handleClickAddCart = () => {
+    // UX 보조: 로그인 안 되어 있으면 로그인 페이지 유도
+    if (!email) {
+      alert("로그인 후 장바구니를 사용할 수 있습니다.");
+      router.push("/member/login");
+      return;
+    }
+
+    const targetPno = Number(pno);
+    let qty = 1;
+
+    const addedItem = cartItems.find((item) => item.pno === targetPno);
+
+    if (addedItem) {
+      const ok = window.confirm("이미 추가된 상품입니다. 추가하시겠습니까?");
+      if (!ok) return;
+      qty = addedItem.qty + 1;
+    }
+
+    // 서버는 requireAuth로 사용자 식별(토큰) / 교재 흐름 유지 위해 email도 같이 보냄
+    changeCart({ email, pno: targetPno, qty });
   };
 
   return (
@@ -93,17 +133,21 @@ export default function ReadClient({ pno }: { pno: number }) {
             : "";
 
           return (
-            <img
-              key={i}
-              alt="product"
-              className="p-4 w-1/2"
-              src={imgSrc}
-            />
+            <img key={i} alt="product" className="p-4 w-1/2" src={imgSrc} />
           );
         })}
       </div>
 
       <div className="flex justify-end p-4">
+        {/* ✅ Add Cart 추가 */}
+        <button
+          type="button"
+          className="inline-block rounded p-4 m-2 text-xl w-32 text-white bg-green-500"
+          onClick={handleClickAddCart}
+        >
+          Add Cart
+        </button>
+
         <button
           type="button"
           className="inline-block rounded p-4 m-2 text-xl w-32 text-white bg-red-500"
@@ -111,6 +155,7 @@ export default function ReadClient({ pno }: { pno: number }) {
         >
           Modify
         </button>
+
         <button
           type="button"
           className="rounded p-4 m-2 text-xl w-32 text-white bg-blue-500"
