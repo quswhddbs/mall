@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import ResultModal from "@/app/components/common/ResultModal";
 import { postAddTodo } from "@/lib/api/todoApi";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 type AddForm = {
   title: string;
@@ -19,15 +20,13 @@ const initState: AddForm = {
 
 export default function AddClient() {
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   const [todo, setTodo] = useState<AddForm>({ ...initState });
 
   // 성공/실패 메시지를 모달로 통일
   const [result, setResult] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  // ✅ 중복 클릭 방지
-  const [isSaving, setIsSaving] = useState(false);
 
   const handleChangeTodo = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -41,7 +40,25 @@ export default function AddClient() {
     return null;
   };
 
-  const handleClickAdd = async () => {
+  const addMutation = useMutation({
+    mutationFn: (payload: AddForm) => postAddTodo(payload),
+    onSuccess: (res: any) => {
+      // 책은 result.TNO 사용. 우리는 둘 다 대응
+      const newTno = (res?.tno ?? res?.TNO) as number | undefined;
+
+      setResult(newTno ?? 0);
+      setTodo({ ...initState });
+
+      // ✅ 앞으로 todo/list를 useQuery로 바꾸면 자동 갱신됨 (지금은 있어도 무해)
+      queryClient.invalidateQueries({ queryKey: ["todo/list"] });
+    },
+    onError: (e: any) => {
+      console.error(e);
+      setErrorMsg(e?.message ?? "등록 실패");
+    },
+  });
+
+  const handleClickAdd = () => {
     // ✅ 검증
     const msg = validate();
     if (msg) {
@@ -49,24 +66,8 @@ export default function AddClient() {
       return;
     }
 
-    // ✅ 중복 클릭 방지
-    if (isSaving) return;
-
-    setIsSaving(true);
-    try {
-      const res = await postAddTodo(todo);
-
-      // 책은 result.TNO 사용. 우리는 둘 다 대응
-      const newTno = (res.tno ?? res.TNO) as number | undefined;
-
-      setResult(newTno ?? 0);
-      setTodo({ ...initState });
-    } catch (e: any) {
-      console.error(e);
-      setErrorMsg(e?.message ?? "등록 실패");
-    } finally {
-      setIsSaving(false);
-    }
+    // ✅ mutation 실행
+    addMutation.mutate(todo);
   };
 
   const closeSuccessModal = () => {
@@ -77,6 +78,8 @@ export default function AddClient() {
   const closeErrorModal = () => {
     setErrorMsg(null);
   };
+
+  const isSaving = addMutation.isPending;
 
   return (
     <div className="w-full flex justify-center py-10">
@@ -92,11 +95,7 @@ export default function AddClient() {
 
         {/* ✅ 에러 모달 */}
         {errorMsg !== null && (
-          <ResultModal
-            title="Error"
-            content={errorMsg}
-            callbackFn={closeErrorModal}
-          />
+          <ResultModal title="Error" content={errorMsg} callbackFn={closeErrorModal} />
         )}
 
         <div className="text-2xl font-extrabold mb-6">Todo Add</div>

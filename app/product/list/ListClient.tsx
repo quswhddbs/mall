@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import PageComponent from "@/app/components/common/PageComponent";
 import { getList } from "@/lib/api/productApi";
 import type { ProductDTO } from "@/lib/dto/productDTO";
+import { useAppSelector } from "@/lib/store/hooks";
 
 type ServerData = {
   items?: ProductDTO[];
@@ -32,6 +33,12 @@ function normalizePathForView(path?: string) {
 }
 
 export default function ListClient() {
+  
+  
+  const auth = useAppSelector((state) => state.auth);
+console.log("auth in product list:", auth);
+
+  
   const router = useRouter();
   const sp = useSearchParams();
 
@@ -39,6 +46,10 @@ export default function ListClient() {
   const size = Number(sp.get("size") ?? 10);
 
   const [serverData, setServerData] = useState<ServerData>(initState);
+
+  // ✅ Admin만 Add 버튼 보이게
+  const roles = useAppSelector((state) => state.auth.roles);
+  const isAdmin = Array.isArray(roles) && roles.includes("ADMIN");
 
   useEffect(() => {
     getList({ page, size }).then((data: any) => setServerData(data));
@@ -61,8 +72,25 @@ export default function ListClient() {
     router.push(`/product/list?page=${targetPage}&size=${size}`);
   };
 
+  const moveToAdd = () => {
+    router.push(`/product/add?page=${page}&size=${size}`);
+  };
+
   return (
     <div className="border-2 border-blue-100 mt-10 mr-2 ml-2">
+      {/* ✅ 교재의 Products 메뉴(ADD) 역할 */}
+      <div className="flex justify-end p-4">
+        {isAdmin ? (
+          <button
+            type="button"
+            className="rounded px-4 py-2 bg-green-600 text-white font-bold"
+            onClick={moveToAdd}
+          >
+            + Add Product
+          </button>
+        ) : null}
+      </div>
+
       <div className="flex flex-wrap mx-auto p-6">
         {list.map((product) => {
           const rawPath = product.uploadFileNames?.[0];
@@ -110,7 +138,12 @@ export default function ListClient() {
         })}
       </div>
 
-      <PageComponent page={page} size={size} totalCount={totalCount} movePage={movePage} />
+      <PageComponent
+        page={page}
+        size={size}
+        totalCount={totalCount}
+        movePage={movePage}
+      />
     </div>
   );
 }

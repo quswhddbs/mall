@@ -1,8 +1,11 @@
 // app/product/modify/[pno]/ModifyClient.tsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import ResultModal from "@/app/components/common/ResultModal";
+import { deleteOne, getOne, putOne } from "@/lib/api/productApi";
 
 type ProductDTO = {
   pno: number;
@@ -30,60 +33,47 @@ function normalizePathForView(path?: string) {
 export default function ModifyClient({ pno }: { pno: number }) {
   const router = useRouter();
   const sp = useSearchParams();
+  const queryClient = useQueryClient();
 
   const page = Number(sp.get("page") ?? "1");
   const size = Number(sp.get("size") ?? "10");
 
   const [product, setProduct] = useState<ProductDTO>(initState);
-  const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
+
+  const [okMsg, setOkMsg] = useState<string | null>(null);
+  const [errMsg, setErrMsg] = useState<string | null>(null);
 
   const uploadRef = useRef<HTMLInputElement | null>(null);
 
   const goList = () => router.push(`/product/list?page=${page}&size=${size}`);
   const goRead = () => router.push(`/product/read/${pno}?page=${page}&size=${size}`);
 
-  useEffect(() => {
-    let mounted = true;
+  // ✅ 1) 조회는 Query (서버 상태)
+  const query = useQuery({
+    queryKey: ["product", String(pno)],
+    queryFn: async () => {
+      const data = await getOne(pno);
 
-    async function load() {
-      setLoading(true);
-      setMsg(null);
+      // 방어: pno 숫자화 + 배열 정리
+      return {
+        ...data,
+        pno: Number((data as any).pno ?? 0),
+        uploadFileNames: (data.uploadFileNames ?? []).filter(Boolean),
+      } as ProductDTO;
+    },
+    staleTime: 1000 * 60 * 10, // 10분 (원하면 Infinity도 가능)
+  });
 
-      try {
-        const res = await fetch(`/api/product/${pno}`, { cache: "no-store" });
-        if (!res.ok) {
-          const t = await res.text();
-          throw new Error(t || `HTTP ${res.status}`);
-        }
-
-        const data = (await res.json()) as ProductDTO;
-
-        if (mounted) {
-          setProduct({
-            ...data,
-            pno: Number((data as any).pno ?? 0),
-            uploadFileNames: (data.uploadFileNames ?? []).filter(Boolean),
-          });
-        }
-      } catch (e: any) {
-        if (mounted) setMsg(e?.message ?? "불러오기 실패");
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    }
-
-    load();
-    return () => {
-      mounted = false;
-    };
-  }, [pno]);
+  // query 성공 시에만 로컬 폼 상태에 주입 (useEffect 최소화)
+  React.useEffect(() => {
+    if (query.isSuccess) setProduct(query.data);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query.isSuccess, query.data?.pno]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target;
-
     setProduct((prev) => ({
       ...prev,
       [name]: name === "price" ? Number(value) : value,
@@ -97,20 +87,20 @@ export default function ModifyClient({ pno }: { pno: number }) {
     }));
   };
 
-  const handleClickModify = async () => {
-    setLoading(true);
-    setMsg(null);
-
-    try {
+  // ✅ 2) 수정은 Mutation (서버 데이터 변경)
+  const modMutation = useMutation({
+    mutationFn: async () => {
       const formData = new FormData();
       formData.append("pname", product.pname);
       formData.append("pdesc", product.pdesc);
       formData.append("price", String(product.price));
 
+      // 기존 이미지 유지 목록
       for (const path of product.uploadFileNames ?? []) {
         formData.append("uploadFileNames", path);
       }
 
+      // 새 파일들
       const files = uploadRef.current?.files;
       if (files && files.length > 0) {
         for (let i = 0; i < files.length; i++) {
@@ -118,58 +108,88 @@ export default function ModifyClient({ pno }: { pno: number }) {
         }
       }
 
-      const res = await fetch(`/api/product/${pno}`, {
-        method: "PUT",
-        body: formData,
-      });
+      return putOne(pno, formData);
+    },
+    onSuccess: () => {
+      // ✅ 상세/목록 캐시 무효화
+      queryClient.invalidateQueries({ queryKey: ["product", String(pno)] });
+      queryClient.invalidateQueries({ queryKey: ["product/list"] });
 
-      if (!res.ok) {
-        const t = await res.text();
-        throw new Error(t || `HTTP ${res.status}`);
-      }
+      setOkMsg("정상적으로 수정되었습니다.");
+    },
+    onError: (e: any) => {
+      console.error(e);
+      setErrMsg(e?.message ?? "수정 실패");
+    },
+  });
 
-      goRead();
-    } catch (e: any) {
-      setMsg(e?.message ?? "수정 실패");
-    } finally {
-      setLoading(false);
-    }
-  };
+  // ✅ 3) 삭제도 Mutation
+  const delMutation = useMutation({
+    mutationFn: async () => {
+      return deleteOne(pno);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["product", String(pno)] });
+      queryClient.invalidateQueries({ queryKey: ["product/list"] });
 
-  const handleClickDelete = async () => {
-    setLoading(true);
-    setMsg(null);
+      setOkMsg("정상적으로 삭제되었습니다.");
+    },
+    onError: (e: any) => {
+      console.error(e);
+      setErrMsg(e?.message ?? "삭제 실패");
+    },
+  });
 
-    try {
-      const res = await fetch(`/api/product/${pno}`, {
-        method: "DELETE",
-      });
+  const isBusy = query.isFetching || modMutation.isPending || delMutation.isPending;
 
-      if (!res.ok) {
-        const t = await res.text();
-        throw new Error(t || `HTTP ${res.status}`);
-      }
+  const closeOkModal = () => {
+    const wasDelete = delMutation.isSuccess;
 
-      // ✅ soft delete 성공 → 리스트로
+    setOkMsg(null);
+
+    if (wasDelete) {
       goList();
-    } catch (e: any) {
-      setMsg(e?.message ?? "삭제 실패");
-    } finally {
-      setLoading(false);
+      return;
     }
+    goRead();
   };
+
+  const closeErrModal = () => setErrMsg(null);
+
+  // 조회 실패 처리
+  if (query.isError) {
+    return (
+      <div className="p-4 w-full bg-white">
+        <div className="text-3xl font-extrabold mb-4">Products Modify Page</div>
+        <div className="p-4 bg-red-50 text-red-700 font-bold rounded border">
+          {(query.error as any)?.message ?? "불러오기 실패"}
+        </div>
+        <div className="flex gap-2 mt-4">
+          <button
+            type="button"
+            className="rounded p-3 text-white bg-blue-500"
+            onClick={goList}
+          >
+            List
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 w-full bg-white">
       <div className="text-3xl font-extrabold mb-4">Products Modify Page</div>
 
-      {loading && <div className="p-4 font-bold">Loading...</div>}
-
-      {msg && (
-        <div className="p-4 bg-red-50 text-red-700 font-bold rounded border">
-          {msg}
-        </div>
+      {/* ✅ 성공/실패 모달 */}
+      {okMsg !== null && (
+        <ResultModal title="Result" content={okMsg} callbackFn={closeOkModal} />
       )}
+      {errMsg !== null && (
+        <ResultModal title="Error" content={errMsg} callbackFn={closeErrModal} />
+      )}
+
+      {isBusy && <div className="p-4 font-bold">Loading...</div>}
 
       <div className="border-2 border-sky-200 mt-4 m-2 p-4">
         <div className="flex justify-center mt-2">
@@ -190,6 +210,7 @@ export default function ModifyClient({ pno }: { pno: number }) {
               type="text"
               value={product.pname}
               onChange={handleChange}
+              disabled={isBusy}
             />
           </div>
         </div>
@@ -203,6 +224,7 @@ export default function ModifyClient({ pno }: { pno: number }) {
               rows={4}
               value={product.pdesc}
               onChange={handleChange}
+              disabled={isBusy}
             />
           </div>
         </div>
@@ -216,6 +238,7 @@ export default function ModifyClient({ pno }: { pno: number }) {
               type="number"
               value={product.price}
               onChange={handleChange}
+              disabled={isBusy}
             />
           </div>
         </div>
@@ -239,7 +262,7 @@ export default function ModifyClient({ pno }: { pno: number }) {
                       type="button"
                       className="rounded p-2 text-sm text-white bg-blue-600"
                       onClick={() => removeOldImage(raw)}
-                      disabled={loading}
+                      disabled={isBusy}
                     >
                       Remove
                     </button>
@@ -258,6 +281,7 @@ export default function ModifyClient({ pno }: { pno: number }) {
               className="w-4/5 p-6 rounded-r border border-solid border-neutral-300 shadow-md"
               type="file"
               multiple
+              disabled={isBusy}
             />
           </div>
         </div>
@@ -266,8 +290,8 @@ export default function ModifyClient({ pno }: { pno: number }) {
           <button
             type="button"
             className="rounded p-4 m-2 text-xl w-32 text-white bg-red-500"
-            onClick={handleClickDelete}
-            disabled={loading}
+            onClick={() => delMutation.mutate()}
+            disabled={isBusy}
           >
             Delete
           </button>
@@ -275,8 +299,8 @@ export default function ModifyClient({ pno }: { pno: number }) {
           <button
             type="button"
             className="rounded p-4 m-2 text-xl w-32 text-white bg-orange-500"
-            onClick={handleClickModify}
-            disabled={loading}
+            onClick={() => modMutation.mutate()}
+            disabled={isBusy}
           >
             Modify
           </button>
@@ -285,6 +309,7 @@ export default function ModifyClient({ pno }: { pno: number }) {
             type="button"
             className="rounded p-4 m-2 text-xl w-32 text-white bg-blue-500"
             onClick={goRead}
+            disabled={isBusy}
           >
             Read
           </button>
@@ -293,6 +318,7 @@ export default function ModifyClient({ pno }: { pno: number }) {
             type="button"
             className="rounded p-4 m-2 text-xl w-32 text-white bg-blue-500"
             onClick={goList}
+            disabled={isBusy}
           >
             List
           </button>
